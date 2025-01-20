@@ -5,6 +5,12 @@ export interface SessionData {
   awaitingRecipient?: boolean;
   awaitingAmount?: boolean;
   recipientAddress?: string;
+  swapState?: {
+    fromToken?: string;
+    toToken?: string;
+    amount?: number;
+    step: "select_from" | "select_to" | "enter_amount" | null;
+  };
 }
 
 export type MyContext = Context & SessionFlavor<SessionData>;
