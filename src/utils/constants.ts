@@ -1,0 +1,8 @@
+import "dotenv/config";
+
+const SUPRA_NODE_URL = process.env.SUPRA_NODE_URL!;
+const BOT_TOKEN = process.env.BOT_TOKEN!;
+const SUPRA_COIN_TYPE =
+  "0x0000000000000000000000000000000000000000000000000000000000000001::supra_coin::SupraCoin";
+
+export { SUPRA_NODE_URL, BOT_TOKEN, SUPRA_COIN_TYPE };
