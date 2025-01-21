@@ -2,15 +2,15 @@ import { Context, SessionFlavor } from "grammy";
 import { HexString } from "supra-l1-sdk";
 
 export interface SessionData {
-  awaitingRecipient?: boolean;
-  awaitingAmount?: boolean;
-  recipientAddress?: string;
+  awaitingRecipient: boolean;
+  awaitingAmount: boolean;
+  recipientAddress: string;
   swapState?: {
+    step: string | null;
     fromToken?: string;
     toToken?: string;
-    amount?: number;
-    step: "select_from" | "select_to" | "enter_amount" | null;
   };
+  lastClaimed: { [key: string]: number };
 }
 
 export type MyContext = Context & SessionFlavor<SessionData>;
@@ -23,4 +23,10 @@ export interface UserAccount {
     privateKeyHex: string;
   };
   address: HexString;
+}
+
+export interface ClaimResponse {
+  result: Array<{
+    since?: string;
+  }>;
 }

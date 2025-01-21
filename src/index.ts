@@ -1,10 +1,18 @@
 import { Bot, session } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { BOT_TOKEN, WHITELISTED_COINS } from "./utils/constants";
-import { MyContext, SessionData } from "./utils/types";
+import { MyContext, SessionData, ClaimResponse } from "./utils/types";
 import { supraService } from "./services/Supra";
 import { HexString } from "supra-l1-sdk";
 import "dotenv/config";
+import {
+  handleCheckBalance,
+  handleFaucet,
+  handleRegister,
+  handleSendSupra,
+  handleSwap,
+} from "./handlers/command.handlers";
+import { checkCooldown, getTimeRemaining } from "./utils/helpers";
 
 const bot = new Bot<MyContext>(BOT_TOKEN);
 
@@ -14,104 +22,100 @@ bot.use(
       awaitingRecipient: false,
       awaitingAmount: false,
       recipientAddress: "",
+      lastClaimed: {},
     }),
   })
 );
 
 bot.command("start", async (ctx) => {
-  const keyboard = new InlineKeyboard()
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const keyboard = new InlineKeyboard();
+
+  if (!supraService.hasAccount(userId)) {
+    keyboard.text("Register New Account", "register");
+    await ctx.reply(
+      "Welcome to Supra Wallet Bot!\nPlease register an account to get started:",
+      {
+        reply_markup: keyboard,
+      }
+    );
+    return;
+  }
+
+  keyboard
     .text("Register New Account", "register")
     .row()
     .text("Check Balance", "balance")
     .row()
     .text("Send SUPRA", "send")
     .row()
-    .text("Swap", "swap");
+    .text("Swap", "swap")
+    .row()
+    .text("Faucet", "faucet");
 
-  await ctx.reply("Welcome to Supra Wallet Bot!\nWhat would you like to do?", {
+  await ctx.reply(
+    "Welcome to Supra Wallet Bot!\nUse /menu anytime to access all features.",
+    {
+      reply_markup: keyboard,
+    }
+  );
+});
+
+bot.command("menu", async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const keyboard = new InlineKeyboard();
+
+  if (!supraService.hasAccount(userId)) {
+    keyboard.text("Register New Account", "register");
+    await ctx.reply("Please register an account to access all features:", {
+      reply_markup: keyboard,
+    });
+    return;
+  }
+
+  keyboard
+    .text("Register New Account", "register")
+    .row()
+    .text("Check Balance", "balance")
+    .row()
+    .text("Send SUPRA", "send")
+    .row()
+    .text("Swap", "swap")
+    .row()
+    .text("Faucet", "faucet");
+
+  await ctx.reply("Select an action from the menu below:", {
     reply_markup: keyboard,
   });
 });
 
-async function handleRegister(ctx: MyContext) {
-  const userId = ctx.from?.id;
-  if (!userId) return;
-
-  try {
-    if (supraService.hasAccount(userId)) {
-      await ctx.reply("You already have a registered account!");
-      return;
-    }
-
-    const account = await supraService.createAccount(userId);
-
-    await ctx.reply(
-      `Account created successfully!\nYour address: ${account.address}\nPlease store your private key safely (sent in next message)`
-    );
-
-    await ctx.reply(
-      `Your private key: ${account.privateKey}\n⚠️ Never share this with anyone!`
-    );
-  } catch (error) {
-    await ctx.reply(`Error creating account: ${error}`);
-  }
-}
-
-async function handleCheckBalance(ctx: MyContext) {
-  const userId = ctx.from?.id;
-  if (!userId) return;
-
-  const account = supraService.getAccount(userId);
-  if (!account) {
-    await ctx.reply("Please register an account first!");
-    return;
-  }
-
-  try {
-    const { balance, symbol, name } = await supraService.getBalance(
-      account.address
-    );
-    await ctx.reply(`Your balance: ${balance} ${symbol} (${name})`);
-  } catch (error) {
-    await ctx.reply(`Error fetching balance: ${error}`);
-  }
-}
-
-async function handleSendSupra(ctx: MyContext) {
+bot.command("help", async (ctx) => {
   const userId = ctx.from?.id;
   if (!userId) return;
 
   if (!supraService.hasAccount(userId)) {
-    await ctx.reply("Please register an account first!");
+    await ctx.reply(
+      "Available commands:\n" +
+        "/start - Start the bot\n" +
+        "/menu - Show main menu\n" +
+        "/help - Show this help message\n\n" +
+        "Please register an account first to access other features."
+    );
     return;
   }
 
-  ctx.session.awaitingRecipient = true;
-  await ctx.reply("Please send the recipient's address:");
-}
-
-async function handleSwap(ctx: MyContext) {
-  const userId = ctx.from?.id;
-  if (!userId) return;
-
-  if (!supraService.hasAccount(userId)) {
-    await ctx.reply("Please register an account first!");
-    return;
-  }
-
-  const keyboard = new InlineKeyboard();
-  WHITELISTED_COINS.forEach((coin) => {
-    keyboard.text(`${coin.symbol}`, `swap_from_${coin.symbol}`).row();
-  });
-
-  ctx.session.swapState = {
-    step: "select_from",
-  };
-
-  await ctx.reply("Select the token you want to swap from:", {
-    reply_markup: keyboard,
-  });
-}
+  await ctx.reply(
+    "Available commands:\n" +
+      "/start - Start the bot\n" +
+      "/menu - Show main menu\n" +
+      "/help - Show this help message\n\n" +
+      "Use /menu to access all features through an interactive menu."
+  );
+});
 
 bot.callbackQuery(/^swap_from_(.+)$/, async (ctx) => {
   const fromToken = ctx.match[1];
@@ -243,6 +247,20 @@ bot.on("message:text", async (ctx) => {
 
 bot.callbackQuery("register", async (ctx) => {
   await handleRegister(ctx);
+
+  const keyboard = new InlineKeyboard()
+    .text("Check Balance", "balance")
+    .row()
+    .text("Send SUPRA", "send")
+    .row()
+    .text("Swap", "swap")
+    .row()
+    .text("Faucet", "faucet");
+
+  await ctx.reply("Your account is ready! Here's what you can do:", {
+    reply_markup: keyboard,
+  });
+
   await ctx.answerCallbackQuery();
 });
 
@@ -261,4 +279,83 @@ bot.callbackQuery("swap", async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-bot.start();
+bot.callbackQuery("faucet", async (ctx) => {
+  await handleFaucet(ctx);
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^faucet_(.+)$/, async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const tokenSymbol = ctx.match[1];
+  const selectedToken = WHITELISTED_COINS.find(
+    (coin) => coin.symbol === tokenSymbol
+  );
+
+  if (!selectedToken) {
+    await ctx.reply("Invalid token selected");
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  if (!checkCooldown(tokenSymbol, ctx.session.lastClaimed)) {
+    const timeRemaining = getTimeRemaining(
+      tokenSymbol,
+      ctx.session.lastClaimed
+    );
+    await ctx.reply(
+      `Please wait ${timeRemaining} before claiming ${tokenSymbol} again`
+    );
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  try {
+    const tx = await supraService.sendTransaction({
+      userId,
+      moduleAddr:
+        "0x8ede5b689d5ac487c3ee48ceabe28ae061be74071c86ffe523b7f42acda2fcb7",
+      moduleName: "faucet",
+      functionName: "request",
+      functionTypeArgs: [selectedToken.type],
+      functionArgs: [],
+    });
+
+    ctx.session.lastClaimed[tokenSymbol] = Math.floor(Date.now() / 1000);
+    await ctx.reply(
+      `Faucet claim transaction sent successfully!\nTransaction hash: ${tx.txHash}`
+    );
+  } catch (error) {
+    await ctx.reply(`Error claiming from faucet: ${error}`);
+  }
+
+  await ctx.answerCallbackQuery();
+});
+
+async function startBot() {
+  try {
+    console.log("Registering bot commands...");
+    await bot.api.setMyCommands([
+      { command: "start", description: "Start the bot" },
+      { command: "menu", description: "Show main menu" },
+      { command: "help", description: "Show help message" },
+    ]);
+    console.log("Bot commands registered successfully");
+
+    console.log("Starting bot...");
+    await bot.start({
+      onStart: (botInfo) => {
+        console.log(`Bot @${botInfo.username} started successfully`);
+      },
+    });
+  } catch (error) {
+    console.error("Error starting bot:", error);
+    throw error;
+  }
+}
+
+startBot().catch((error) => {
+  console.error("Failed to start bot:", error);
+  process.exit(1);
+});
