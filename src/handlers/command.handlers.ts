@@ -39,12 +39,15 @@ export async function handleCheckBalance(ctx: MyContext) {
   }
 
   try {
-    const { balance, symbol, name } = await supraService.getBalance(
-      account.address
+    const balances = await supraService.getAllBalances(account.address);
+
+    const balanceMessages = balances.map(
+      ({ balance, symbol, name }) => `${name} (${symbol}): ${balance}`
     );
-    await ctx.reply(`Your balance: ${balance} ${symbol} (${name})`);
+
+    await ctx.reply("Your balances:\n\n" + balanceMessages.join("\n"));
   } catch (error) {
-    await ctx.reply(`Error fetching balance: ${error}`);
+    await ctx.reply(`Error fetching balances: ${error}`);
   }
 }
 

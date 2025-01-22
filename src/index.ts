@@ -201,6 +201,25 @@ bot.on("message:text", async (ctx) => {
         `To: ${toToken}\n`
     );
 
+    const fromTokenType = WHITELISTED_COINS.find(
+      (coin) => coin.symbol === fromToken
+    )?.type;
+
+    if (!fromTokenType) {
+      await ctx.reply("Invalid token selected");
+      return;
+    }
+
+    const accountBalance = await supraService.getCoinBalance(
+      supraService.userAccounts.get(ctx.from?.id)?.address!,
+      fromTokenType
+    );
+
+    if (accountBalance < amount) {
+      await ctx.reply("Insufficient balance");
+      return;
+    }
+
     const swapRequest = await fetch(
       "https://swap-backend-prod-340342993997.asia-south2.run.app/api/swap",
       {

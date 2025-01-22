@@ -1,12 +1,16 @@
 import { HexString, SupraAccount, SupraClient } from "supra-l1-sdk";
-import { SUPRA_NODE_URL, SUPRA_COIN_TYPE } from "../utils/constants";
+import {
+  SUPRA_NODE_URL,
+  SUPRA_COIN_TYPE,
+  WHITELISTED_COINS,
+} from "../utils/constants";
 import { UserAccount } from "../utils/types";
 import { TypeTagParser } from "aptos";
 import { BCS } from "supra-l1-sdk";
 
 export class SupraService {
   private client: SupraClient;
-  private userAccounts: Map<number, UserAccount>;
+  public userAccounts: Map<number, UserAccount>;
 
   constructor() {
     this.client = new SupraClient(SUPRA_NODE_URL);
@@ -52,6 +56,23 @@ export class SupraService {
       symbol: coinInfo.symbol,
       name: coinInfo.name,
     };
+  }
+
+  public async getCoinBalance(
+    address: HexString,
+    coinType: string
+  ): Promise<number> {
+    try {
+      const balance = await this.client.getAccountCoinBalance(
+        address,
+        coinType
+      );
+      const coinInfo = await this.client.getCoinInfo(coinType);
+
+      return Number(balance) / Math.pow(10, coinInfo.decimals);
+    } catch (error) {
+      return 0;
+    }
   }
 
   public async transferSupraCoin(
@@ -136,6 +157,39 @@ export class SupraService {
         enableWaitForTransaction: true,
       }
     );
+  }
+
+  public async getAllBalances(address: HexString): Promise<
+    Array<{
+      balance: number;
+      symbol: string;
+      name: string;
+    }>
+  > {
+    const balances = [];
+
+    const supraCoinBalance = await this.getBalance(address);
+    balances.push(supraCoinBalance);
+
+    for (const coin of WHITELISTED_COINS) {
+      try {
+        const balance = await this.getCoinBalance(address, coin.type);
+        balances.push({
+          balance,
+          symbol: coin.symbol,
+          name: coin.name,
+        });
+      } catch (error) {
+        console.error(`Error fetching balance for ${coin.symbol}:`, error);
+        balances.push({
+          balance: 0,
+          symbol: coin.symbol,
+          name: coin.name,
+        });
+      }
+    }
+
+    return balances;
   }
 }
 
